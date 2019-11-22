@@ -1,7 +1,6 @@
 jobs:
 
 - job: 'test'
-  dependsOn: 'build'
   pool: 'Win-CPU-2019'
   timeoutInMinutes: 120
   variables:
