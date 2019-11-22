@@ -44,6 +44,13 @@ jobs:
       workingFolder: '$(Build.BinariesDirectory)\$(BuildConfig)'
       createLogFile: true
 
+  - task: PythonScript@0
+    displayName: 'Build wheel'
+    inputs:
+      scriptPath: '$(Build.SourcesDirectory)\setup.py'
+      arguments: 'bdist_wheel'
+      workingDirectory: '$(Build.BinariesDirectory)\$(BuildConfig)\$(BuildConfig)'
+
   - task: CopyFiles@2
     displayName: 'Copy Files to: $(Build.ArtifactStagingDirectory)'
     inputs:
@@ -52,7 +59,7 @@ jobs:
        $(BuildConfig)\*.exe
        $(BuildConfig)\*.dll
        $(BuildConfig)\testdata\**
-       **\*.whl
+       $(BuildConfig)\$(BuildConfig)\**\*.whl
        external\protobuf\cmake\$(BuildConfig)\*.exe
        external\protobuf\cmake\$(BuildConfig)\*.dll
       TargetFolder: $(Build.ArtifactStagingDirectory)
