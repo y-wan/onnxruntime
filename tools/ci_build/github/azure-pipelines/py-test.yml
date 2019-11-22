@@ -103,6 +103,11 @@ jobs:
       TargetFolder: $(Build.BinariesDirectory)\RelWithDebInfo\RelWithDebInfo
 
   - script: |
+     .\automl_featurizers_unittests.exe
+     .\onnxruntime_mlas_test.exe
+     .\onnxruntime_shared_lib_test.exe
+     .\onnxruntime_test_all.exe
+     .\opaque_api_test.exe  
      DIR dist\ /S /B > wheel_filename_file
      set /p WHEEL_FILENAME=<wheel_filename_file
      del wheel_filename_file
@@ -114,6 +119,11 @@ jobs:
     displayName: 'Run Debug test'
 
   - script: |
+     .\automl_featurizers_unittests.exe
+     .\onnxruntime_mlas_test.exe
+     .\onnxruntime_shared_lib_test.exe
+     .\onnxruntime_test_all.exe
+     .\opaque_api_test.exe
      DIR dist\ /S /B > wheel_filename_file
      set /p WHEEL_FILENAME=<wheel_filename_file
      del wheel_filename_file
