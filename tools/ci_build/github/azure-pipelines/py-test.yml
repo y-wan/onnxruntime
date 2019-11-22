@@ -103,21 +103,23 @@ jobs:
       TargetFolder: $(Build.BinariesDirectory)\RelWithDebInfo\RelWithDebInfo
 
   - script: |
+     mklink  /D /J $(Build.BinariesDirectory)\Debug\models $(Build.BinariesDirectory)\models  
      .\automl_featurizers_unittests.exe
      .\onnxruntime_mlas_test.exe
      .\onnxruntime_shared_lib_test.exe
+     .\onnxruntime_test_all.exe
      .\opaque_api_test.exe  
      DIR dist\ /S /B > wheel_filename_file
      set /p WHEEL_FILENAME=<wheel_filename_file
      del wheel_filename_file
      python.exe -m pip install -q --upgrade %WHEEL_FILENAME%
-     mklink  /D /J $(Build.BinariesDirectory)\Debug\models $(Build.BinariesDirectory)\models
      python $(Build.SourcesDirectory)\tools\ci_build\build.py --config Debug --build_dir $(Build.BinariesDirectory) --skip_submodule_sync --build_shared_lib --test --cmake_generator "Visual Studio 16 2019"  --use_mkldnn --build_wheel --enable_onnx_tests
    
     workingDirectory: '$(Build.BinariesDirectory)\Debug\Debug'
     displayName: 'Run Debug test'
 
   - script: |
+     mklink  /D /J $(Build.BinariesDirectory)\RelWithDebInfo\models $(Build.BinariesDirectory)\models  
      .\automl_featurizers_unittests.exe
      .\onnxruntime_mlas_test.exe
      .\onnxruntime_shared_lib_test.exe
@@ -127,7 +129,6 @@ jobs:
      set /p WHEEL_FILENAME=<wheel_filename_file
      del wheel_filename_file
      python.exe -m pip install -q --upgrade %WHEEL_FILENAME%
-     mklink  /D /J $(Build.BinariesDirectory)\RelWithDebInfo\models $(Build.BinariesDirectory)\models
      python $(Build.SourcesDirectory)\tools\ci_build\build.py --config RelWithDebInfo --build_dir $(Build.BinariesDirectory) --skip_submodule_sync --build_shared_lib --test --cmake_generator "Visual Studio 16 2019"  --use_mkldnn --build_wheel --enable_onnx_tests
    
     workingDirectory: '$(Build.BinariesDirectory)\RelWithDebInfo\RelWithDebInfo'
