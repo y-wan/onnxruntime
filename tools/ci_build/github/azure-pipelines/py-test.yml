@@ -1,6 +1,97 @@
 jobs:
+- job: 'build'
+  pool: 'Win-CPU-2019'
+  strategy:
+    maxParallel: 2
+    matrix:
+      debug:
+        BuildConfig: 'Debug'
+        VcDllPath: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.23.27820\debug_nonredist\x64\Microsoft.VC142.DebugCRT'
+      release:
+        BuildConfig: 'RelWithDebInfo'
+        VcDllPath: 'C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Redist\MSVC\14.23.27820\x64\Microsoft.VC142.CRT'
+  variables:
+    OrtPackageId: 'Microsoft.ML.OnnxRuntime'
+    MsbuildArguments: '-detailedsummary -maxcpucount -consoleloggerparameters:PerformanceSummary'
+    OnnxRuntimeBuildDirectory: '$(Build.BinariesDirectory)'
+  timeoutInMinutes: 120
+  workspace:
+    clean: all
+  steps:    
+  - task: UsePythonVersion@0
+    inputs: 
+      versionSpec: '3.7' 
+      addToPath: true 
+      architecture: 'x64'
+
+  - task: PythonScript@0
+    displayName: 'Generate cmake config'
+    inputs:
+      scriptPath: '$(Build.SourcesDirectory)\tools\ci_build\build.py'
+      arguments: '--config $(BuildConfig) --build_dir $(Build.BinariesDirectory) --skip_submodule_sync --build_shared_lib --update --cmake_generator "Visual Studio 16 2019" --build_wheel --use_automl --use_mkldnn --use_openmp --build_shared_lib --enable_onnx_tests'
+      workingDirectory: '$(Build.BinariesDirectory)'
+     
+  - task: VSBuild@1
+    displayName: 'Build'
+    inputs:
+      solution: '$(Build.BinariesDirectory)\$(BuildConfig)\onnxruntime.sln'
+      platform: 'x64'
+      configuration: $(BuildConfig)
+      msbuildArgs: $(MsbuildArguments)
+      msbuildArchitecture: 'x64'
+      maximumCpuCount: true
+      logProjectEvents: false
+      workingFolder: '$(Build.BinariesDirectory)\$(BuildConfig)'
+      createLogFile: true
+
+  - task: PythonScript@0
+    displayName: 'Build wheel'
+    inputs:
+      scriptPath: '$(Build.SourcesDirectory)\setup.py'
+      arguments: 'bdist_wheel'
+      workingDirectory: '$(Build.BinariesDirectory)\$(BuildConfig)\$(BuildConfig)'
+
+  - task: CopyFiles@2
+    displayName: 'Copy Files to: $(Build.ArtifactStagingDirectory)'
+    inputs:
+      sourceFolder: $(Build.BinariesDirectory)\$(BuildConfig)
+      Contents: |
+       $(BuildConfig)\*.exe
+       $(BuildConfig)\*.dll
+       $(BuildConfig)\testdata\**
+       $(BuildConfig)\**\*.whl
+       external\protobuf\cmake\$(BuildConfig)\*.exe
+       external\protobuf\cmake\$(BuildConfig)\*.dll
+      TargetFolder: $(Build.ArtifactStagingDirectory)
+
+  - task: CopyFiles@2
+    displayName: 'Copy VC DLLs to: $(Build.ArtifactStagingDirectory)'
+    inputs:
+      sourceFolder: $(VcDllPath)
+      Contents: |
+       **\*.dll
+      TargetFolder: $(Build.ArtifactStagingDirectory)\$(BuildConfig)
+
+  - task: CopyFiles@2
+    displayName: 'Copy VC DLLs to: $(Build.ArtifactStagingDirectory)'
+    inputs:
+      sourceFolder: $(VcDllPath)
+      Contents: |
+       **\*.dll
+      TargetFolder: $(Build.ArtifactStagingDirectory)\external\protobuf\cmake\$(BuildConfig)
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish Pipeline Artifact'
+    inputs:
+      targetPath: '$(Build.ArtifactStagingDirectory)'
+
+  - task: ms.vss-governance-buildtask.governance-build-task-component-detection.ComponentGovernanceComponentDetection@0
+    displayName: 'Component Detection'
+    condition: succeeded()
+
 - job: 'test'
   pool: 'Win-CPU-2019'
+  dependsOn: 'build'
   timeoutInMinutes: 120
   variables:
     OrtPackageId: 'Microsoft.ML.OnnxRuntime'
@@ -15,11 +106,6 @@ jobs:
   - task: DownloadPipelineArtifact@2
     displayName: 'Download Pipeline Artifact'
     inputs:      
-      buildType: specific
-      project: '$(System.TeamProjectId)'
-      definition: 82
-      pipelineId: 98837
-      buildVersionToDownload: 'specific'
       targetPath: '$(Build.BinariesDirectory)'
 
   - script: |
