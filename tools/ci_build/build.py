@@ -169,9 +169,6 @@ def resolve_executable_path(command_or_path):
 def is_windows():
     return sys.platform.startswith("win")
 
-def is_ubuntu_1604():
-    return platform.linux_distribution()[0] == 'Ubuntu' and platform.linux_distribution()[1] == '16.04'
-
 def get_config_build_dir(build_dir, config):
     # build directory per configuration
     return os.path.join(build_dir, config)
@@ -196,13 +193,6 @@ def update_submodules(source_dir):
     run_subprocess(["git", "submodule", "sync", "--recursive"], cwd=source_dir)
     run_subprocess(["git", "submodule", "update", "--init", "--recursive"], cwd=source_dir)
 
-def is_docker():
-    path = '/proc/self/cgroup'
-    return (
-        os.path.exists('/.dockerenv') or
-        os.path.isfile(path) and any('docker' in line for line in open(path))
-    )
-
 def is_sudo():
     return 'SUDO_UID' in os.environ.keys()
 
@@ -214,24 +204,6 @@ def install_apt_package(package):
         else:
             raise BuildError(package + " APT package missing. Please re-run this script using sudo to install.")
 
-def install_ubuntu_deps(args):
-    'Check if the necessary Ubuntu dependencies are installed. Not required on docker. Provide help output if missing.'
-
-    # check we need the packages first
-    if not (args.enable_pybind or args.use_openblas):
-        return
-
-    # not needed on docker as packages are pre-installed
-    if not is_docker():
-        try:
-            if args.enable_pybind:
-                install_apt_package("python3")
-
-            if args.use_openblas:
-                install_apt_package("libopenblas-dev")
-
-        except Exception as e:
-            raise BuildError("Error setting up required APT packages. {}".format(str(e)))
 
 def install_python_deps(numpy_version=""):
     dep_packages = ['setuptools', 'wheel', 'pytest']
@@ -899,12 +871,6 @@ def main():
         if args.android:
             # Cross-compiling for Android
             path_to_protoc_exe = build_protoc_for_host(cmake_path, source_dir, build_dir, args)
-        if is_ubuntu_1604():
-            if (args.arm or args.arm64):
-                raise BuildError("Only Windows ARM(64) cross-compiled builds supported currently through this script")
-            install_ubuntu_deps(args)
-            if not is_docker():
-                install_python_deps()
         if (args.enable_pybind and is_windows()):
             install_python_deps(args.numpy_version)
         if (not args.skip_submodule_sync):
