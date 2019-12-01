@@ -102,7 +102,7 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-/*
+
 TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   onnxruntime::Model model("graph_1", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
@@ -181,7 +181,7 @@ TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-*/
+
 TEST(TensorrtExecutionProviderTest, NodeIndexMappingTest) {
   onnxruntime::Model model("graph_1", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
