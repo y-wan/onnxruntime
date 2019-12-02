@@ -102,9 +102,9 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-/*
+
 TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
-  onnxruntime::Model model("graph_1", false, DefaultLoggingManager().DefaultLogger());
+  onnxruntime::Model model("graph_2", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
   std::vector<onnxruntime::NodeArg*> inputs;
   std::vector<onnxruntime::NodeArg*> outputs;
@@ -112,9 +112,9 @@ TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   // FLOAT tensor.
   ONNX_NAMESPACE::TypeProto float_tensor;
   float_tensor.mutable_tensor_type()->set_elem_type(ONNX_NAMESPACE::TensorProto_DataType_FLOAT);
-  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("symbolic1");
-  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("symbolic2");
-  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("symbolic3");
+  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("dim1");
+  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("dim2");
+  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("dim3");
 
   auto& input_arg_1 = graph.GetOrCreateNodeArg("X", &float_tensor);
   auto& input_arg_2 = graph.GetOrCreateNodeArg("Y", &float_tensor);
@@ -181,9 +181,9 @@ TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-*/
+
 TEST(TensorrtExecutionProviderTest, NodeIndexMappingTest) {
-  onnxruntime::Model model("graph_1", false, DefaultLoggingManager().DefaultLogger());
+  onnxruntime::Model model("graph_3", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
   std::vector<onnxruntime::NodeArg*> inputs;
   std::vector<onnxruntime::NodeArg*> outputs;
