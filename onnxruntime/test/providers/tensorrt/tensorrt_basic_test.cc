@@ -35,7 +35,7 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
   float_tensor.mutable_tensor_type()->set_elem_type(ONNX_NAMESPACE::TensorProto_DataType_FLOAT);
   float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(1);
   float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(3);
-  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param(dim);
+  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("dim");
 
   auto& input_arg_1 = graph.GetOrCreateNodeArg("X", &float_tensor);
   auto& input_arg_2 = graph.GetOrCreateNodeArg("Y", &float_tensor);
