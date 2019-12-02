@@ -23,7 +23,7 @@ void VerifyOutputs(const std::vector<OrtValue>& fetches, const std::vector<int64
   const std::vector<float> found(rtensor.template Data<float>(), rtensor.template Data<float>() + expected_values.size());
   ASSERT_EQ(expected_values, found);
 }
-/*
+
 TEST(TensorrtExecutionProviderTest, FunctionTest) {
   onnxruntime::Model model("graph_1", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
@@ -102,7 +102,7 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-*/
+/*
 TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   onnxruntime::Model model("graph_2", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
@@ -181,7 +181,7 @@ TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-
+*/
 TEST(TensorrtExecutionProviderTest, NodeIndexMappingTest) {
   onnxruntime::Model model("graph_3", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
