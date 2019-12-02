@@ -35,7 +35,7 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
   float_tensor.mutable_tensor_type()->set_elem_type(ONNX_NAMESPACE::TensorProto_DataType_FLOAT);
   float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(1);
   float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(3);
-  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_param("dim");
+  float_tensor.mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(2);
 
   auto& input_arg_1 = graph.GetOrCreateNodeArg("X", &float_tensor);
   auto& input_arg_2 = graph.GetOrCreateNodeArg("Y", &float_tensor);
@@ -56,8 +56,8 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
 
   auto status = graph.Resolve();
   ASSERT_TRUE(status.IsOK());
-  std::string model_file_name = "trt_execution_provider_function_test.onnx";
-  status = onnxruntime::Model::Save(model, model_file_name);
+  ///std::string model_file_name = "trt_execution_provider_function_test.onnx";
+  ///status = onnxruntime::Model::Save(model, model_file_name);
 
   std::vector<int64_t> dims_mul_x = {1, 3, 2};
   std::vector<float> values_mul_x = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
@@ -92,7 +92,12 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
   epi.device_id = 0;
   EXPECT_TRUE(session_object.RegisterExecutionProvider(onnxruntime::make_unique<::onnxruntime::TensorrtExecutionProvider>(epi)).IsOK());
 
-  status = session_object.Load(model_file_name);
+  std::string serialized_model;
+  auto model_proto = model.ToProto();
+  EXPECT_TRUE(model_proto.SerializeToString(&serialized_model));
+  std::stringstream sstr(serialized_model);
+  status = session_object.Load(sstr);
+  ///status = session_object.Load(model_file_name);
   ASSERT_TRUE(status.IsOK());
   status = session_object.Initialize();
   ASSERT_TRUE(status.IsOK());
@@ -102,7 +107,7 @@ TEST(TensorrtExecutionProviderTest, FunctionTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-/*
+
 TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   onnxruntime::Model model("graph_2", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
@@ -135,8 +140,8 @@ TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
 
   auto status = graph.Resolve();
   ASSERT_TRUE(status.IsOK());
-  std::string model_file_name = "trt_execution_provider_dynamicshape_test.onnx";
-  status = onnxruntime::Model::Save(model, model_file_name);
+  ///std::string model_file_name = "trt_execution_provider_dynamicshape_test.onnx";
+  ///status = onnxruntime::Model::Save(model, model_file_name);
 
   std::vector<int64_t> dims_mul_x = {1, 3, 2};
   std::vector<float> values_mul_x = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
@@ -171,7 +176,12 @@ TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   epi.device_id = 0;
   EXPECT_TRUE(session_object.RegisterExecutionProvider(onnxruntime::make_unique<::onnxruntime::TensorrtExecutionProvider>(epi)).IsOK());
 
-  status = session_object.Load(model_file_name);
+  std::string serialized_model;
+  auto model_proto = model.ToProto();
+  EXPECT_TRUE(model_proto.SerializeToString(&serialized_model));
+  std::stringstream sstr(serialized_model);
+  status = session_object.Load(sstr);
+  ///status = session_object.Load(model_file_name);
   ASSERT_TRUE(status.IsOK());
   status = session_object.Initialize();
   ASSERT_TRUE(status.IsOK());
@@ -181,7 +191,7 @@ TEST(TensorrtExecutionProviderTest, DynamicShapeTest) {
   ASSERT_TRUE(status.IsOK());
   VerifyOutputs(fetches, expected_dims_mul_m, expected_values_mul_m);
 }
-*/
+
 TEST(TensorrtExecutionProviderTest, NodeIndexMappingTest) {
   onnxruntime::Model model("graph_3", false, DefaultLoggingManager().DefaultLogger());
   auto& graph = model.MainGraph();
@@ -244,8 +254,8 @@ TEST(TensorrtExecutionProviderTest, NodeIndexMappingTest) {
 
   auto status = graph.Resolve();
   ASSERT_TRUE(status.IsOK());
-  std::string model_file_name = "trt_execution_provider_nodeindexmapping_test.onnx";
-  status = onnxruntime::Model::Save(model, model_file_name);
+  ///std::string model_file_name = "trt_execution_provider_nodeindexmapping_test.onnx";
+  ///status = onnxruntime::Model::Save(model, model_file_name);
 
   std::vector<int64_t> dims_mul_x = {1, 3, 2};
   std::vector<bool> values_mul_x = {true, false, true, false, true, false};
@@ -285,7 +295,12 @@ TEST(TensorrtExecutionProviderTest, NodeIndexMappingTest) {
   epi.device_id = 0;
   EXPECT_TRUE(session_object.RegisterExecutionProvider(onnxruntime::make_unique<::onnxruntime::TensorrtExecutionProvider>(epi)).IsOK());
 
-  status = session_object.Load(model_file_name);
+  std::string serialized_model;
+  auto model_proto = model.ToProto();
+  EXPECT_TRUE(model_proto.SerializeToString(&serialized_model));
+  std::stringstream sstr(serialized_model);
+  status = session_object.Load(sstr);
+  ///status = session_object.Load(model_file_name);
   ASSERT_TRUE(status.IsOK());
   status = session_object.Initialize();
   ASSERT_TRUE(status.IsOK());
