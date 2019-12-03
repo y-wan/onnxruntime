@@ -745,6 +745,7 @@ common::Status TensorrtExecutionProvider::Compile(const std::vector<onnxruntime:
       if (dimension_update) {
         auto trt_config = unique_pointer<nvinfer1::IBuilderConfig>(trt_builder->createBuilderConfig());
         trt_config->addOptimizationProfile(trt_profile);
+        trt_state->engine->destroy();          
         trt_state->engine = trt_builder->buildEngineWithConfig(*trt_state->network, *trt_config);
         ORT_ENFORCE(trt_state->engine != nullptr);
 
