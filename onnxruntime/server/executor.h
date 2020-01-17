@@ -9,17 +9,28 @@
 #include "predict.pb.h"
 #include "util.h"
 #include "core/session/onnxruntime_cxx_api.h"
+#include "single_include/nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 namespace onnxruntime {
 namespace server {
 
 class Executor {
  public:
+  Executor(ServerEnvironment* server_env, std::string request_id, bool using_raw_data) : env_(server_env),
+                                                                    request_id_(std::move(request_id)),
+                                                                    using_raw_data_(using_raw_data) {}
   Executor(ServerEnvironment* server_env, std::string request_id) : env_(server_env),
                                                                     request_id_(std::move(request_id)),
                                                                     using_raw_data_(true) {}
 
   // Prediction method
+  google::protobuf::util::Status Predict(const std::string& model_name,
+                                         const std::string& model_version,
+                                         const std::string& request_body,
+                                         /* out */ std::string& response_body);
+
   google::protobuf::util::Status Predict(const std::string& model_name,
                                          const std::string& model_version,
                                          const onnxruntime::server::PredictRequest& request,
@@ -30,10 +41,23 @@ class Executor {
   const std::string request_id_;
   bool using_raw_data_;
 
+  google::protobuf::util::Status SetMLValue(const Ort::Session& session,
+                                            const json& input_json,
+                                            int id,
+                                            MemBufferArray& buffers,
+                                            OrtMemoryInfo* cpu_memory_info,
+                                            /* out */ Ort::Value& ml_value);
+
   google::protobuf::util::Status SetMLValue(const onnx::TensorProto& input_tensor,
                                             MemBufferArray& buffers,
                                             OrtMemoryInfo* cpu_memory_info,
                                             /* out */ Ort::Value& ml_value);
+
+  google::protobuf::util::Status SetNameMLValueMap(const Ort::Session& session,
+                                                   /* out */ std::vector<std::string>& input_names,
+                                                   /* out */ std::vector<Ort::Value>& input_values,
+                                                   const std::string& request_body,
+                                                   MemBufferArray& buffers);
 
   google::protobuf::util::Status SetNameMLValueMap(/* out */ std::vector<std::string>& input_names,
                                                    /* out */ std::vector<Ort::Value>& input_values,

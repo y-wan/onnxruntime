@@ -17,7 +17,7 @@ namespace server {
 
 protobufutil::Status GetRequestFromJson(const std::string& json_string, /* out */ onnxruntime::server::PredictRequest& request) {
   protobufutil::JsonParseOptions options;
-  options.ignore_unknown_fields = true;
+  options.ignore_unknown_fields = false;
 
   protobufutil::Status result = JsonStringToMessage(json_string, &request, options);
   return result;

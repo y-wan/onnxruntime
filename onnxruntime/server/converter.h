@@ -10,11 +10,18 @@
 
 #include "environment.h"
 #include "predict.pb.h"
+#include "single_include/nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 namespace onnxruntime {
 namespace server {
 
 onnx::TensorProto_DataType MLDataTypeToTensorProtoDataType(ONNXTensorElementDataType cpp_type);
+
+void MLValueToJson(Ort::Value& ml_value,
+                   const std::shared_ptr<spdlog::logger>& logger,
+                   /* out */ json& output_json);
 
 // Convert MLValue to TensorProto. Some fields are ignored:
 //   * name field: could not get from MLValue

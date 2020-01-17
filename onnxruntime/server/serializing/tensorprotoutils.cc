@@ -11,6 +11,9 @@
 #include "core/framework/allocator.h"
 #include "onnx-ml.pb.h"
 #include "core/session/onnxruntime_cxx_api.h"
+#include "single_include/nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 namespace onnxruntime {
 namespace server {
@@ -54,6 +57,24 @@ inline std::string MakeString(const std::string& str) {
 }
 inline std::string MakeString(const char* p_str) {
   return p_str;
+}
+
+void GetFlatJsonHelper(const json& input_json, /*out*/json& result_json) {
+  if (input_json.is_array()) {
+    for (const auto& el : input_json) {
+      GetFlatJsonHelper(el, result_json);
+    }
+  } else {
+    for (const auto& el : input_json) {
+      result_json.push_back(el);
+    }
+  }
+}
+
+json GetFlatJson(const json& input_json) {
+  json result_json{};
+  GetFlatJsonHelper(input_json, result_json);
+  return result_json;
 }
 
 std::vector<int64_t> GetTensorShapeFromTensorProto(const onnx::TensorProto& tensor_proto) {
@@ -101,6 +122,40 @@ static void UnpackTensorWithRawData(const void* raw_data, size_t raw_data_length
 }
 
 // This macro doesn't work for Float16/bool/string tensors
+#define DEFINE_UNPACK_JSON(T, is_type)                                                                         \
+  template <>                                                                                                  \
+  void UnpackTensor(const json& input_json,                                                                    \
+                    /*out*/ T* p_data, int64_t expected_size) {                                                \
+    if (nullptr == p_data) {                                                                                   \
+      const size_t size = input_json.size();                                                                   \
+      if (size == 0) return;                                                                                   \
+      throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);                                            \
+    }                                                                                                          \
+    json flat_json = GetFlatJson(input_json);                                                             \
+    if (nullptr == p_data || flat_json.empty() || !flat_json.is_array() || !(*flat_json.begin()).is_type()) {  \
+      throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);                                            \
+    }                                                                                                          \
+    if (static_cast<long>(flat_json.size()) != expected_size)                                                  \
+      throw Ort::Exception(MakeString("corrupted protobuf data: tensor shape size(", expected_size,            \
+                                      ") does not match the data size(", flat_json.size(), ") in proto"),      \
+                           OrtErrorCode::ORT_FAIL);                                                            \
+    for (const auto& el : flat_json)                                                                           \
+      *p_data++ = el.get<T>();                                                                                 \
+  }
+
+// TODO: complex64 complex128
+DEFINE_UNPACK_JSON(float, is_number_float)
+DEFINE_UNPACK_JSON(double, is_number_float)
+DEFINE_UNPACK_JSON(uint8_t, is_number_unsigned)
+DEFINE_UNPACK_JSON(int8_t, is_number_integer)
+DEFINE_UNPACK_JSON(int16_t, is_number_integer)
+DEFINE_UNPACK_JSON(uint16_t, is_number_unsigned)
+DEFINE_UNPACK_JSON(int32_t, is_number_integer)
+DEFINE_UNPACK_JSON(int64_t, is_number_integer)
+DEFINE_UNPACK_JSON(uint64_t, is_number_unsigned)
+DEFINE_UNPACK_JSON(uint32_t, is_number_unsigned)
+
+// This macro doesn't work for Float16/bool/string tensors
 #define DEFINE_UNPACK_TENSOR(T, Type, field_name, field_size)                                                \
   template <>                                                                                                \
   void UnpackTensor(const onnx::TensorProto& tensor, const void* raw_data, size_t raw_data_len,              \
@@ -141,6 +196,26 @@ DEFINE_UNPACK_TENSOR(uint32_t, onnx::TensorProto_DataType_UINT32, uint64_data, u
 
 // doesn't support raw data
 template <>
+void UnpackTensor(const json& input_json,
+                  /*out*/ std::string* p_data, int64_t expected_size) {
+  json flat_json = GetFlatJson(input_json);
+  if (nullptr == p_data) {
+    if (flat_json.empty()) return;
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+  if (flat_json.empty() || !flat_json.is_array() || !(*flat_json.begin()).is_string()) {
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+
+  if (static_cast<long>(flat_json.size()) != expected_size)
+    throw Ort::Exception(
+        "UnpackTensor: the pre-allocate size does not match the size in proto", OrtErrorCode::ORT_FAIL);
+
+  for (const auto& el : GetFlatJson(flat_json)) {
+    *p_data++ = el.get<std::string>();
+  }
+}
+template <>
 void UnpackTensor(const onnx::TensorProto& tensor, const void* /*raw_data*/, size_t /*raw_data_len*/,
                   /*out*/ std::string* p_data, int64_t expected_size) {
   if (nullptr == p_data) {
@@ -161,6 +236,26 @@ void UnpackTensor(const onnx::TensorProto& tensor, const void* /*raw_data*/, siz
   }
 
   return;
+}
+template <>
+void UnpackTensor(const json& input_json,
+                  /*out*/ bool* p_data, int64_t expected_size) {
+  json flat_json = GetFlatJson(input_json);
+  if (nullptr == p_data) {
+    const size_t size = flat_json.size();
+    if (size == 0) return;
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+  if (flat_json.empty() || !flat_json.is_array() || !(*flat_json.begin()).is_boolean()) {
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+
+  if (static_cast<long>(flat_json.size()) != expected_size)
+    throw Ort::Exception(
+        "UnpackTensor: the pre-allocate size does not match the size in proto", OrtErrorCode::ORT_FAIL);
+  for (const auto& el : GetFlatJson(flat_json)) {
+    *p_data++ = el.get<bool>();
+  }
 }
 template <>
 void UnpackTensor(const onnx::TensorProto& tensor, const void* raw_data, size_t raw_data_len,
@@ -186,6 +281,33 @@ void UnpackTensor(const onnx::TensorProto& tensor, const void* raw_data, size_t 
   }
 
   return;
+}
+template <>
+void UnpackTensor(const json& input_json,
+                  /*out*/ MLFloat16* p_data, int64_t expected_size) {
+  json flat_json = GetFlatJson(input_json);
+  if (nullptr == p_data) {
+    const size_t size = flat_json.size();
+    if (size == 0) return;
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+  if (flat_json.empty() || !flat_json.is_array() || !(*flat_json.begin()).is_number_float()) {
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+
+  if (static_cast<long>(flat_json.size()) != expected_size)
+    throw Ort::Exception(
+        "UnpackTensor: the pre-allocate size does not match the size in proto", OrtErrorCode::ORT_FAIL);
+
+  constexpr int max_value = std::numeric_limits<uint16_t>::max();
+  for (const auto& el : GetFlatJson(flat_json)) {
+    int v = el.get<int>();
+    if (v < 0 || v > max_value) {
+      throw Ort::Exception(
+          "data overflow", OrtErrorCode::ORT_FAIL);
+    }
+    *p_data++ = MLFloat16(static_cast<uint16_t>(v));
+  }
 }
 template <>
 void UnpackTensor(const onnx::TensorProto& tensor, const void* raw_data, size_t raw_data_len,
@@ -216,8 +338,35 @@ void UnpackTensor(const onnx::TensorProto& tensor, const void* raw_data, size_t 
     }
     p_data[i] = MLFloat16(static_cast<uint16_t>(v));
   }
+}
 
-  return;
+template <>
+void UnpackTensor(const json& input_json,
+                  /*out*/ BFloat16* p_data, int64_t expected_size) {
+  json flat_json = GetFlatJson(input_json);
+  if (nullptr == p_data) {
+    const size_t size = flat_json.size();
+    if (size == 0)
+      return;
+
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+  if (flat_json.empty() || !flat_json.is_array() || !(*flat_json.begin()).is_number_float()) {
+    throw Ort::Exception("", OrtErrorCode::ORT_INVALID_ARGUMENT);
+  }
+  if (static_cast<long>(flat_json.size()) != expected_size)
+    throw Ort::Exception(
+        "UnpackTensor: the pre-allocate size does not match the size in proto", OrtErrorCode::ORT_FAIL);
+
+  constexpr int max_value = std::numeric_limits<uint16_t>::max();
+  for (const auto& el : GetFlatJson(flat_json)) {
+    int v = el.get<int>();
+    if (v < 0 || v > max_value) {
+      throw Ort::Exception(
+          "data overflow", OrtErrorCode::ORT_FAIL);
+    }
+    *p_data++ = BFloat16(static_cast<uint16_t>(v));
+  }
 }
 
 template <>
@@ -253,6 +402,45 @@ void UnpackTensor(const onnx::TensorProto& tensor, const void* raw_data, size_t 
   }
 
   return;
+}
+
+#define CASE_JSON_TRACE(X, Y)                                                             \
+  case ONNXTensorElementDataType::ONNX_TENSOR_ELEMENT_DATA_TYPE_##X:                              \
+    if (!IAllocator::CalcMemSizeForArrayWithAlignment<alignment>(size, sizeof(Y), out)) { \
+      throw Ort::Exception("Invalid TensorProto", OrtErrorCode::ORT_FAIL);                \
+    }                                                                                     \
+    break;
+
+template <size_t alignment>
+void GetSizeInBytesFromShapeAndElementType(const std::vector<int64_t>& shape, const ONNXTensorElementDataType& ele_type, size_t* out) {
+  const auto& dims = shape;
+  size_t size = 1;
+  for (auto dim : dims) {
+    if (dim < 0 || static_cast<uint64_t>(dim) >= std::numeric_limits<size_t>::max()) {
+      throw Ort::Exception("Invalid TensorProto", OrtErrorCode::ORT_FAIL);
+    }
+    if (!IAllocator::CalcMemSizeForArray(size, static_cast<size_t>(dim), &size)) {
+      throw Ort::Exception("Invalid TensorProto", OrtErrorCode::ORT_FAIL);
+    }
+  }
+  switch (ele_type) {
+    CASE_JSON_TRACE(FLOAT, float);
+    CASE_JSON_TRACE(DOUBLE, double);
+    CASE_JSON_TRACE(BOOL, bool);
+    CASE_JSON_TRACE(INT8, int8_t);
+    CASE_JSON_TRACE(INT16, int16_t);
+    CASE_JSON_TRACE(INT32, int32_t);
+    CASE_JSON_TRACE(INT64, int64_t);
+    CASE_JSON_TRACE(UINT8, uint8_t);
+    CASE_JSON_TRACE(UINT16, uint16_t);
+    CASE_JSON_TRACE(UINT32, uint32_t);
+    CASE_JSON_TRACE(UINT64, uint64_t);
+    CASE_JSON_TRACE(FLOAT16, MLFloat16);
+    CASE_JSON_TRACE(BFLOAT16, BFloat16);
+    CASE_JSON_TRACE(STRING, std::string);
+    default:
+      throw Ort::Exception("", OrtErrorCode::ORT_NOT_IMPLEMENTED);
+  }
 }
 
 #define CASE_PROTO_TRACE(X, Y)                                                            \
@@ -424,6 +612,9 @@ void TensorProtoToMLValue(const onnx::TensorProto& tensor_proto, const MemBuffer
   value = Ort::Value::CreateTensor(&allocator, tensor_data, m.GetLen(), tensor_shape_vec.data(), tensor_shape_vec.size(), (ONNXTensorElementDataType)tensor_proto.data_type());
   return;
 }
+template void GetSizeInBytesFromShapeAndElementType<256>(const std::vector<int64_t>& shape, const ONNXTensorElementDataType& ele_type, size_t* out);
+template void GetSizeInBytesFromShapeAndElementType<0>(const std::vector<int64_t>& shape, const ONNXTensorElementDataType& ele_type, size_t* out);
+
 template void GetSizeInBytesFromTensorProto<256>(const onnx::TensorProto& tensor_proto,
                                                  size_t* out);
 template void GetSizeInBytesFromTensorProto<0>(const onnx::TensorProto& tensor_proto, size_t* out);

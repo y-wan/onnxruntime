@@ -68,6 +68,7 @@ endif()
 # Setup dependencies
 include(get_boost.cmake)
 set(re2_src ${REPO_ROOT}/cmake/external/re2)
+set(json_src ${REPO_ROOT}/cmake/external/json)
 set(SPDLOG_BUILD_EXAMPLES OFF)
 add_subdirectory(${REPO_ROOT}/cmake/external/spdlog)
 
@@ -165,6 +166,7 @@ target_include_directories(onnxruntime_server_lib PRIVATE
   ${ONNXRUNTIME_ROOT}/server
   ${Boost_INCLUDE_DIR}
   ${re2_src}
+  ${json_src}
 )
 
 

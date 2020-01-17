@@ -8,6 +8,9 @@
 
 #include "converter.h"
 #include "serializing/mem_buffer.h"
+#include "single_include/nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 namespace onnxruntime {
 namespace server {
@@ -52,6 +55,166 @@ onnx::TensorProto_DataType MLDataTypeToTensorProtoDataType(ONNXTensorElementData
     default:
       return onnx::TensorProto_DataType::TensorProto_DataType_UNDEFINED;
   }
+}
+
+void GetUnflatJson(const json& input_json, size_t input_id, const std::vector<int64_t>& dims, size_t dims_id, /*out*/ json& result_json) {
+  if (dims_id == dims.size()) return;
+  if (dims_id == dims.size() - 1) {
+    for (auto i = 0; i < dims[dims_id]; ++i) {
+      if (input_id >= input_json.size()) {
+        throw Ort::Exception("Input dimension error", OrtErrorCode::ORT_INVALID_ARGUMENT);
+      }
+      result_json.push_back(input_json[input_id++]);
+      GetUnflatJson(input_json, input_id, dims, dims_id + 1, result_json[i]);
+    }
+  } else {
+    for (auto i = 0; i < dims[dims_id]; ++i) {
+      result_json.push_back(json::array());
+      GetUnflatJson(input_json, input_id, dims, dims_id + 1, result_json[i]);
+    }
+  }
+}
+
+void MLValueToJson(Ort::Value& ml_value,
+                   const std::shared_ptr<spdlog::logger>& logger,
+                   /* out */ json& output_json) {
+  if (!ml_value.IsTensor()) {
+    throw Ort::Exception("Don't support Non-Tensor values", OrtErrorCode::ORT_NOT_IMPLEMENTED);
+  }
+  // Tensor in MLValue
+  const auto& shape = ml_value.GetTensorTypeAndShapeInfo();
+  const std::vector<int64_t>& dims = shape.GetShape();
+  const ONNXTensorElementDataType& ele_type = shape.GetElementType();
+
+  auto elem_count = shape.GetElementCount();
+  json flat_json = json::array();
+
+  switch (ele_type) {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT: {  // Target: raw_data or float_data
+      const auto* data = ml_value.GetTensorMutableData<float>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<int32_t>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<uint8_t>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<int8_t>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<uint16_t>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<int16_t>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<bool>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<onnxruntime::MLFloat16>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(reinterpret_cast<const uint16_t*>(data)[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16: {  // Target: raw_data or int32_data
+      const auto* data = ml_value.GetTensorMutableData<onnxruntime::BFloat16>();
+
+      std::vector<uint16_t> raw_data;
+      raw_data.reserve(elem_count);
+      for (size_t i = 0; i < elem_count; ++i) {
+        raw_data.push_back(data[i].val);
+      }
+
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(raw_data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING: {  // Target: string_data
+      // string could not be written into "raw_data"
+      auto length = ml_value.GetStringTensorDataLength();
+      std::vector<char> buffer;
+      std::vector<size_t> offsets;
+      buffer.reserve(length);
+      offsets.reserve(elem_count);
+      ml_value.GetStringTensorContent(buffer.data(), length, offsets.data(), elem_count);
+      size_t start = 0;
+      for (size_t i = 1; i < elem_count; ++i) {
+        auto end = offsets[i];
+        std::string s(&buffer[start], end - start);
+        flat_json.push_back(std::string(&buffer[start], end - start));
+        start = end;
+      }
+      flat_json.push_back(std::string(&buffer[start], length - start));
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64: {  // Target: raw_data or int64_data
+      const auto* data = ml_value.GetTensorMutableData<int64_t>();
+      for (size_t x = 0, loop_length = elem_count; x < loop_length; ++x) {
+        flat_json.push_back(data[x]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32: {  // Target: raw_data or uint64_data
+      const auto* data = ml_value.GetTensorMutableData<uint32_t>();
+      for (size_t i = 0, count = elem_count; i < count; ++i) {
+        flat_json.push_back(data[i]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64: {  // Target: raw_data or uint64_data
+      const auto* data = ml_value.GetTensorMutableData<uint64_t>();
+      for (size_t x = 0, loop_length = elem_count; x < loop_length; ++x) {
+        flat_json.push_back(data[x]);
+      }
+      break;
+    }
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE: {  // Target: raw_data or double_data
+      auto data = ml_value.GetTensorMutableData<double>();
+      for (size_t x = 0, loop_length = elem_count; x < loop_length; ++x) {
+        flat_json.push_back(data[x]);
+      }
+      break;
+    }
+    default: {
+      logger->error("Unsupported TensorProto DataType: {}", ele_type);
+      std::ostringstream ostr;
+      ostr << "Initialized tensor with unexpected type: " << ele_type;
+      throw Ort::Exception(ostr.str(), OrtErrorCode::ORT_INVALID_ARGUMENT);
+    }
+  }
+
+  GetUnflatJson(flat_json, 0, dims, 0, output_json);
 }
 
 void MLValueToTensorProto(Ort::Value& ml_value, bool using_raw_data,

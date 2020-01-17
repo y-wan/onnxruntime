@@ -10,6 +10,7 @@
 #include "core/framework/ml_value.h"
 #include "core/framework/tensor.h"
 #include "serializing/tensorprotoutils.h"
+#include "single_include/nlohmann/json.hpp"
 
 #include "onnx-ml.pb.h"
 #include "predict.pb.h"
@@ -18,10 +19,112 @@
 #include "executor.h"
 #include "util.h"
 
+using json = nlohmann::json;
+
 namespace onnxruntime {
 namespace server {
 
 namespace protobufutil = google::protobuf::util;
+
+#define CASE_JSON(X, Y)                                                                \
+  case ONNXTensorElementDataType::ONNX_TENSOR_ELEMENT_DATA_TYPE_##X:                   \
+    ::onnxruntime::server::UnpackTensor<Y>(input_json, (Y*)preallocated, tensor_size); \
+    break;
+
+void JsonToMLValue(const std::vector<int64_t>& shape, const ONNXTensorElementDataType& ele_type, const json& input_json, const MemBuffer& m, Ort::Value& value) {
+  const OrtMemoryInfo& allocator = m.GetAllocInfo();
+  void* tensor_data;
+  {
+    {
+      void* preallocated = m.GetBuffer();
+      size_t preallocated_size = m.GetLen();
+      int64_t tensor_size = 1;
+      {
+        for (auto i : shape) {
+          if (i < 0) throw Ort::Exception("Tensor can't contain negative dims", OrtErrorCode::ORT_FAIL);
+          tensor_size *= i;
+        }
+      }
+      // tensor_size could be zero. see test_slice_start_out_of_bounds\test_data_set_0\output_0.pb
+      if (static_cast<uint64_t>(tensor_size) > SIZE_MAX) {
+        throw Ort::Exception("Size overflow", OrtErrorCode::ORT_INVALID_ARGUMENT);
+      }
+      size_t size_to_allocate;
+      onnxruntime::server::GetSizeInBytesFromShapeAndElementType<0>(shape, ele_type, &size_to_allocate);
+
+      if (preallocated && preallocated_size < size_to_allocate)
+        throw Ort::Exception(MakeString(
+            "The buffer planner is not consistent with tensor buffer size, expected ",
+            size_to_allocate, ", got ", preallocated_size),
+                             OrtErrorCode::ORT_FAIL);
+      switch (ele_type) {
+        CASE_JSON(FLOAT, float);
+        CASE_JSON(DOUBLE, double);
+        CASE_JSON(BOOL, bool);
+        CASE_JSON(INT8, int8_t);
+        CASE_JSON(INT16, int16_t);
+        CASE_JSON(INT32, int32_t);
+        CASE_JSON(INT64, int64_t);
+        CASE_JSON(UINT8, uint8_t);
+        CASE_JSON(UINT16, uint16_t);
+        CASE_JSON(UINT32, uint32_t);
+        CASE_JSON(UINT64, uint64_t);
+        CASE_JSON(FLOAT16, MLFloat16);
+        CASE_JSON(BFLOAT16, BFloat16);
+        case ONNXTensorElementDataType::ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING:
+          if (preallocated != nullptr) {
+            onnxruntime::server::OrtInitializeBufferForTensor(preallocated, preallocated_size, ele_type);
+          }
+          onnxruntime::server::UnpackTensor<std::string>(input_json,
+                                                         (std::string*)preallocated, tensor_size);
+          break;
+        default: {
+          std::ostringstream ostr;
+          ostr << "Initialized tensor with unexpected type: " << ele_type;
+          throw Ort::Exception(ostr.str(), OrtErrorCode::ORT_INVALID_ARGUMENT);
+        }
+      }
+      tensor_data = preallocated;
+    }
+  }
+  // Note: We permit an empty tensor_shape_vec, and treat it as a scalar (a tensor of size 1).
+  value = Ort::Value::CreateTensor(&allocator, tensor_data, m.GetLen(), shape.data(), shape.size(), ele_type);
+}
+
+protobufutil::Status Executor::SetMLValue(const Ort::Session& session,
+                                          const json& input_json,
+                                          int id,
+                                          MemBufferArray& buffers,
+                                          OrtMemoryInfo* cpu_memory_info,
+                                          /* out */ Ort::Value& ml_value) {
+  auto logger = env_->GetLogger(request_id_);
+  std::vector<int64_t> shape{};
+  ONNXTensorElementDataType ele_type{};
+  size_t cpu_tensor_length = 0;
+  try {
+    shape = session.GetInputTypeInfo(id).GetTensorTypeAndShapeInfo().GetShape();
+    ele_type = session.GetInputTypeInfo(id).GetTensorTypeAndShapeInfo().GetElementType();
+    onnxruntime::server::GetSizeInBytesFromShapeAndElementType<0>(shape, ele_type, &cpu_tensor_length);
+  } catch (const Ort::Exception& e) {
+    logger->error("GetSizeInBytesFromTensorProto() failed. Error Message: {}", e.what());
+    return GenerateProtobufStatus(e.GetOrtErrorCode(), e.what());
+  }
+
+  auto* buf = buffers.AllocNewBuffer(cpu_tensor_length);
+  try {
+    JsonToMLValue(shape,
+                  ele_type,
+                  input_json,
+                  onnxruntime::server::MemBuffer(buf, cpu_tensor_length, *cpu_memory_info),
+                  ml_value);
+
+  } catch (const Ort::Exception& e) {
+    logger->error("TensorProtoToMLValue() failed. Message: {}", e.what());
+    return GenerateProtobufStatus(e.GetOrtErrorCode(), e.what());
+  }
+
+  return protobufutil::Status::OK;
+}
 
 protobufutil::Status Executor::SetMLValue(const onnx::TensorProto& input_tensor,
                                           MemBufferArray& buffers,
@@ -48,6 +151,45 @@ protobufutil::Status Executor::SetMLValue(const onnx::TensorProto& input_tensor,
     return GenerateProtobufStatus(e.GetOrtErrorCode(), e.what());
   }
 
+  return protobufutil::Status::OK;
+}
+
+protobufutil::Status Executor::SetNameMLValueMap(const Ort::Session& session,
+                                                 std::vector<std::string>& input_names,
+                                                 std::vector<Ort::Value>& input_values,
+                                                 const std::string& request_body,
+                                                 MemBufferArray& buffers) {
+  auto logger = env_->GetLogger(request_id_);
+
+  OrtMemoryInfo* memory_info = nullptr;
+  auto ort_status = Ort::GetApi().CreateCpuMemoryInfo(OrtArenaAllocator, OrtMemTypeDefault, &memory_info);
+
+  if (ort_status != nullptr || memory_info == nullptr) {
+    logger->error("OrtCreateCpuMemoryInfo failed");
+    return protobufutil::Status(protobufutil::error::Code::RESOURCE_EXHAUSTED, "OrtCreateCpuMemoryInfo() failed");
+  }
+
+  // Prepare the Value object
+  json request_json = json::parse(request_body);
+
+  int id = 0;
+  for (const auto& input : request_json.items()) {
+    using_raw_data_ = false;
+
+    Ort::Value ml_value{nullptr};
+//    auto status = protobufutil::Status::OK;
+    auto status = SetMLValue(session, input.value(), id++, buffers, memory_info, ml_value);
+    if (status != protobufutil::Status::OK) {
+      Ort::GetApi().ReleaseMemoryInfo(memory_info);
+      logger->error("SetMLValue() failed! Input name: {}", input.key());
+      return status;
+    }
+
+    input_names.push_back(input.key());
+    input_values.push_back(std::move(ml_value));
+  }
+
+  Ort::GetApi().ReleaseMemoryInfo(memory_info);
   return protobufutil::Status::OK;
 }
 
@@ -101,6 +243,57 @@ std::vector<Ort::Value> Run(const Ort::Session& session, const Ort::RunOptions& 
   }
 
   return const_cast<Ort::Session&>(session).Run(options, input_ptrs.data(), const_cast<Ort::Value*>(input_values.data()), input_count, output_ptrs.data(), output_count);
+}
+
+protobufutil::Status Executor::Predict(const std::string& model_name,
+                                       const std::string& model_version,
+                                       const std::string& request_body,
+                                       /* out */ std::string& response_body) {
+  auto logger = env_->GetLogger(request_id_);
+  // Convert request_body string to NameMLValMap
+  MemBufferArray buffer_array;
+  std::vector<std::string> input_names;
+  std::vector<Ort::Value> input_values;
+  auto conversion_status = SetNameMLValueMap(env_->GetSession(model_name, model_version), input_names, input_values, request_body, buffer_array);
+  if (conversion_status != protobufutil::Status::OK) {
+    return conversion_status;
+  }
+
+  Ort::RunOptions run_options{};
+  run_options.SetRunLogVerbosityLevel(static_cast<int>(env_->GetLogSeverity()));
+  run_options.SetRunTag(request_id_.c_str());
+
+  // Prepare the output names
+  std::vector<std::string> output_names = env_->GetModelOutputNames(model_name, model_version);
+
+  std::vector<Ort::Value> outputs;
+  try {
+    outputs = Run(env_->GetSession(model_name, model_version), run_options, input_names, input_values, output_names);
+  } catch (const Ort::Exception& e) {
+    return GenerateProtobufStatus(e.GetOrtErrorCode(), e.what());
+  }
+
+  // Build the response
+  json response_json{};
+  for (size_t i = 0, sz = outputs.size(); i < sz; ++i) {
+//    onnx::TensorProto output_tensor{};
+    json output_json{};
+    try {
+      MLValueToJson(outputs[i], logger, output_json);
+    } catch (const Ort::Exception& e) {
+      logger = env_->GetLogger(request_id_);
+      logger->error("MLValueToTensorProto() failed. Output name: {}. Error Message: {}", output_names[i], e.what());
+      return GenerateProtobufStatus(e.GetOrtErrorCode(), e.what());
+    }
+
+    if (response_json.find(output_names[i]) != response_json.end()) {
+      logger->error("SetNameMLValueMap() failed. Output name: {}. Trying to overwrite existing output value", output_names[i]);
+      return protobufutil::Status(protobufutil::error::Code::INVALID_ARGUMENT, "SetNameMLValueMap() failed: Cannot have two outputs with the same name");
+    }
+    response_json[output_names[i]] = output_json;
+  }
+  response_body = response_json.dump();
+  return protobufutil::Status::OK;
 }
 
 protobufutil::Status Executor::Predict(const std::string& model_name,

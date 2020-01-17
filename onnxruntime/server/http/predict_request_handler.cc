@@ -54,28 +54,39 @@ void Predict(const std::string& name,
   }
 
   // Deserialize the payload
-  auto body = context.request.body();
+  auto request_body = context.request.body();
+  bool useSimpleFormat = false;  // whether to use human-readable data format and less keys in request/response body
   PredictRequest predict_request{};
   http::status error_code;
   std::string error_message;
   bool parse_succeeded = ParseRequestPayload(context, request_type, predict_request, error_code, error_message);
   if (!parse_succeeded) {
-    GenerateErrorResponse(logger, error_code, error_message, context);
-    return;
+    if (request_type != SupportedContentType::Json) {
+      GenerateErrorResponse(logger, error_code, error_message, context);
+      return;
+    }
+    useSimpleFormat = true;
   }
 
   // Run Prediction
-  Executor executor(env.get(), context.request_id);
+  Executor executor(env.get(), context.request_id, false);
   PredictResponse predict_response{};
-  auto status = executor.Predict(effective_name, effective_version, predict_request, predict_response);
+  std::string response_body{};
+  protobufutil::Status status;
+  if (useSimpleFormat) {
+    status = executor.Predict(effective_name, effective_version, request_body, response_body);
+  } else {
+    status = executor.Predict(effective_name, effective_version, predict_request, predict_response);
+  }
   if (!status.ok()) {
     GenerateErrorResponse(logger, GetHttpStatusCode((status)), status.error_message(), context);
     return;
   }
 
   // Serialize to proper output format
-  std::string response_body{};
-  if (response_type == SupportedContentType::Json) {
+  if (useSimpleFormat) {
+    context.response.set(http::field::content_type, "application/json");
+  } else if (response_type == SupportedContentType::Json) {
     status = GenerateResponseInJson(predict_response, response_body);
     if (!status.ok()) {
       GenerateErrorResponse(logger, http::status::internal_server_error, status.error_message(), context);
