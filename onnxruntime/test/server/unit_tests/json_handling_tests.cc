@@ -27,7 +27,7 @@ TEST(JsonDeserializationTests, WithUnknownField) {
   onnxruntime::server::PredictRequest request;
   protobufutil::Status status = onnxruntime::server::GetRequestFromJson(input_json, request);
 
-  EXPECT_EQ(protobufutil::error::OK, status.error_code());
+  EXPECT_EQ(protobufutil::error::INVALID_ARGUMENT, status.error_code());
 }
 
 TEST(JsonDeserializationTests, InvalidData) {

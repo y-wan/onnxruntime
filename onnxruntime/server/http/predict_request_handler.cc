@@ -69,7 +69,7 @@ void Predict(const std::string& name,
   }
 
   // Run Prediction
-  Executor executor(env.get(), context.request_id, false);
+  Executor executor(env.get(), context.request_id);
   PredictResponse predict_response{};
   std::string response_body{};
   protobufutil::Status status;
